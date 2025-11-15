@@ -8,7 +8,7 @@ const auth = async (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_EXPIRY);
     const user = await User.findById(payload.id).select('-password');
     if (!user) return res.status(401).json({ message: 'User not found' });
     req.user = user;

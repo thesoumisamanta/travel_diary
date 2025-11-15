@@ -15,7 +15,7 @@ const loginSchema = Joi.object({
 });
 
 const generateToken = (user) => {
-  return jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+  return jwt.sign({ id: user._id }, process.env.ACCESS_TOKEN_EXPIRY, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 };
 
 export const register = async (req, res) => {

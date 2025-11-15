@@ -10,7 +10,7 @@ router.get('/', videoController.list);
 router.get('/search', videoController.search);
 router.get('/:id', videoController.getVideo);
 
-router.post('/', auth, upload.single('file'), videoController.upload);
+router.post('/', auth, upload.single('video'), videoController.upload);
 router.post('/:id/like', auth, videoController.like);
 router.post('/:id/dislike', auth, videoController.dislike);
 
