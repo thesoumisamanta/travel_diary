@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -e
-ROOT="youtube-backend"
+ROOT="travel_diary_backend"
 mkdir -p $ROOT/src/{config,controllers,models,routes,middlewares,services,validators,utils}
 mkdir -p $ROOT/public/uploads/videos
 cat > $ROOT/package.json <<'JSON'
-{ "name":"youtube-backend","version":"1.0.0" }
+{ "name":"travel_diary","version":"1.0.0" }
 JSON
 cat > $ROOT/.env.sample <<'ENV'
 PORT=5000
 NODE_ENV=development
-MONGO_URI=mongodb://localhost:27017/youtube_clone
+MONGO_URI=mongodb://localhost:27017/travel_diary
 JWT_SECRET=your_jwt_secret_here
 JWT_EXPIRES_IN=7d
 CLOUDINARY_CLOUD_NAME=

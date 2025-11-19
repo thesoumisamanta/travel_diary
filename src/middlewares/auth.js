@@ -1,21 +1,49 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
+import ApiError from '../utils/api_error.js';
+import asyncHandler from '../utils/async_handler.js';
 
+const auth = asyncHandler(async (req, res, next) => {
+  console.log("AUTH MIDDLEWARE EXECUTED");
+  
+  // Get token from cookies or Authorization header
+  const token = req.cookies?.accessToken || 
+                req.header("Authorization")?.replace("Bearer ", "");
 
-const auth = async (req, res, next) => {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
+  console.log("Token received:", token ? "Yes" : "No");
+
+  if (!token) {
+    throw new ApiError(401, 'Access token is required');
+  }
 
   try {
-    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_EXPIRY);
-    const user = await User.findById(payload.id).select('-password');
-    if (!user) return res.status(401).json({ message: 'User not found' });
+    // Verify token with correct secret
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    console.log("Decoded token:", decoded);
+
+    // Find user by ID from token
+    const user = await User.findById(decoded._id).select('-password -refreshToken');
+
+    if (!user) {
+      throw new ApiError(401, 'Invalid access token - user not found');
+    }
+
+    console.log("User found:", user.username, user.email);
+
+    // Attach user to request
     req.user = user;
     next();
-  } catch (err) {
-    return res.status(401).json({ message: 'Invalid token' });
+  } catch (error) {
+    console.error('Auth middleware error:', error.message);
+    
+    if (error.name === 'JsonWebTokenError') {
+      throw new ApiError(401, 'Invalid access token');
+    } else if (error.name === 'TokenExpiredError') {
+      throw new ApiError(401, 'Access token has expired');
+    } else {
+      throw new ApiError(401, error?.message || 'Invalid access token');
+    }
   }
-};
+});
 
 export default auth;

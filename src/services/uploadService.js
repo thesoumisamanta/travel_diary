@@ -3,7 +3,7 @@ import path from 'path';
 import { cloudinary, initCloudinary } from '../config/cloudinary.js';
 
 
-export const uploadToCloudinary = async (buffer, filename, folder = 'youtube') => {
+export const uploadToCloudinary = async (buffer, filename, folder = 'travel_diary') => {
     if (!process.env.CLOUDINARY_API_KEY) {
         throw new Error('Cloudinary not configured');
     }
