@@ -1,10 +1,9 @@
-import { asyncHandler } from "../utils/asyncHandler.js";
-import {ApiError} from "../utils/ApiError.js"
-import { User} from "../models/user.model.js"
-import {uploadOnCloudinary} from "../utils/cloudinary.js"
-import { ApiResponse } from "../utils/ApiResponse.js";
+import User from "../models/user.models.js"
 import jwt from "jsonwebtoken"
 import mongoose from "mongoose";
+import asyncHandler from "../utils/async_handler.js"
+import ApiError from "../utils/api_error.js"
+import ApiResponse from "../utils/api_response.js"
 
 
 const generateAccessAndRefereshTokens = async(userId) =>{

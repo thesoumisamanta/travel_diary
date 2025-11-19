@@ -2,9 +2,14 @@ import Joi from 'joi';
 
 // User schemas
 export const registerSchema = Joi.object({
-  name: Joi.string().min(2).max(100).required(),
+  username: Joi.string().min(2).max(100).required(),
   email: Joi.string().email().required(),
-  password: Joi.string().min(6).required()
+  password: Joi.string().min(6).required(),
+  fullName: Joi.string().min(2).max(100).required(),
+  accountType: Joi.string().valid('Personal', 'Business').required(),
+  avatar: Joi.string().uri().allow(''),
+  coverImage: Joi.string().uri().allow(''),
+  watchHistory: Joi.array().items(Joi.string())
 });
 
 export const loginSchema = Joi.object({
