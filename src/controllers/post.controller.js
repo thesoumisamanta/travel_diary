@@ -1,4 +1,5 @@
 import Post from '../models/post.models.js';
+import Follow from '../models/follow.models.js';
 import { uploadToCloudinary, saveLocally } from '../services/uploadService.js';
 import mongoose from 'mongoose';
 import Joi from 'joi';
@@ -181,7 +182,7 @@ export const dislikePost = async (req, res) => {
   }
 };
 
-// List all posts with pagination
+// List all posts with pagination (PUBLIC - all posts)
 export const listPosts = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -189,6 +190,67 @@ export const listPosts = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const posts = await Post.find({ isPublic: true })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('uploader', 'username fullName avatar');
+
+    res.json(posts);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get feed - ONLY posts from followed users
+export const getFeed = async (req, res) => {
+  try {
+    const currentUserId = req.user._id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
+    const skip = (page - 1) * limit;
+
+    // Get list of users that current user follows
+    const following = await Follow.find({ follower: currentUserId })
+      .select('following');
+    
+    const followingIds = following.map(f => f.following);
+
+    // Include current user's own posts in feed
+    followingIds.push(currentUserId);
+
+    // Get posts only from followed users
+    const posts = await Post.find({ 
+      uploader: { $in: followingIds },
+      isPublic: true 
+    })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('uploader', 'username fullName avatar');
+
+    res.json(posts);
+  } catch (err) {
+    console.error('Feed error:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get user's own posts
+export const getUserPosts = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
+    const skip = (page - 1) * limit;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    const posts = await Post.find({ 
+      uploader: userId,
+      isPublic: true 
+    })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -231,6 +293,8 @@ export default {
   getPost, 
   likePost, 
   dislikePost, 
-  listPosts, 
+  listPosts,
+  getFeed,
+  getUserPosts,
   searchPosts 
 };

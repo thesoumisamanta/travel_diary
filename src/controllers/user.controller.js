@@ -1,4 +1,6 @@
 import User from "../models/user.models.js";
+import Post from "../models/post.models.js";
+import Video from "../models/video.models.js";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import asyncHandler from "../utils/async_handler.js";
@@ -261,9 +263,25 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User not found");
   }
 
+  // Get user's posts and videos
+  const posts = await Post.find({ uploader: user._id, isPublic: true })
+    .sort({ createdAt: -1 })
+    .select('_id title postType videoUrl images thumbnailUrl createdAt views likes dislikes');
+
+  const videos = await Video.find({ uploader: user._id, isPublic: true })
+    .sort({ createdAt: -1 })
+    .select('_id title fileUrl thumbnailUrl createdAt views likes dislikes duration');
+
+  // Add posts and videos to user object
+  const userWithContent = {
+    ...user.toObject(),
+    posts: posts,
+    videos: videos
+  };
+
   return res
     .status(200)
-    .json(new ApiResponse(200, user, "User fetched successfully"));
+    .json(new ApiResponse(200, userWithContent, "User fetched successfully"));
 });
 
 export const updateAccountDetails = asyncHandler(async (req, res) => {
@@ -445,11 +463,27 @@ export const getUserChannelProfile = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Channel does not exist");
   }
 
+  const userId = channel[0]._id;
+
+  // Get user's posts and videos
+  const posts = await Post.find({ uploader: userId, isPublic: true })
+    .sort({ createdAt: -1 })
+    .select('_id title postType videoUrl images thumbnailUrl createdAt views likes dislikes');
+
+  const videos = await Video.find({ uploader: userId, isPublic: true })
+    .sort({ createdAt: -1 })
+    .select('_id title fileUrl thumbnailUrl createdAt views likes dislikes duration');
+
+  const channelWithContent = {
+    ...channel[0],
+    posts: posts,
+    videos: videos
+  };
+
   return res
     .status(200)
-    .json(new ApiResponse(200, channel[0], "User channel fetched successfully"));
+    .json(new ApiResponse(200, channelWithContent, "User channel fetched successfully"));
 });
-
 
 export const getWatchHistory = asyncHandler(async (req, res) => {
   const user = await User.aggregate([

@@ -1,4 +1,5 @@
 import Video from '../models/video.models.js';
+import Follow from '../models/follow.models.js';
 import { uploadToCloudinary, saveLocally } from '../services/uploadService.js';
 import mongoose from 'mongoose';
 import Joi from 'joi';
@@ -130,6 +131,7 @@ export const dislike = async (req, res) => {
   }
 };
 
+// List all videos (PUBLIC - all videos)
 export const list = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -137,6 +139,67 @@ export const list = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const videos = await Video.find({ isPublic: true })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('uploader', 'username fullName avatar');
+
+    res.json(videos);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get video feed - ONLY videos from followed users
+export const getFeed = async (req, res) => {
+  try {
+    const currentUserId = req.user._id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
+    const skip = (page - 1) * limit;
+
+    // Get list of users that current user follows
+    const following = await Follow.find({ follower: currentUserId })
+      .select('following');
+    
+    const followingIds = following.map(f => f.following);
+
+    // Include current user's own videos in feed
+    followingIds.push(currentUserId);
+
+    // Get videos only from followed users
+    const videos = await Video.find({ 
+      uploader: { $in: followingIds },
+      isPublic: true 
+    })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('uploader', 'username fullName avatar');
+
+    res.json(videos);
+  } catch (err) {
+    console.error('Video feed error:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get user's own videos
+export const getUserVideos = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
+    const skip = (page - 1) * limit;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    const videos = await Video.find({ 
+      uploader: userId,
+      isPublic: true 
+    })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -173,4 +236,13 @@ export const search = async (req, res) => {
   }
 };
 
-export default { upload, getVideo, like, dislike, list, search };
+export default { 
+  upload, 
+  getVideo, 
+  like, 
+  dislike, 
+  list,
+  getFeed,
+  getUserVideos,
+  search 
+};
