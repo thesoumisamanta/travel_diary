@@ -393,31 +393,31 @@ export const getUserChannelProfile = asyncHandler(async (req, res) => {
     },
     {
       $lookup: {
-        from: "subscriptions",
+        from: "follows",
         localField: "_id",
-        foreignField: "channel",
-        as: "subscribers"
+        foreignField: "following",
+        as: "followers"
       }
     },
     {
       $lookup: {
-        from: "subscriptions",
+        from: "follows",
         localField: "_id",
-        foreignField: "subscriber",
-        as: "subscribedTo"
+        foreignField: "follower",
+        as: "following"
       }
     },
     {
       $addFields: {
-        subscribersCount: {
-          $size: "$subscribers"
+        followersCount: {
+          $size: "$followers"
         },
-        channelsSubscribedToCount: {
-          $size: "$subscribedTo"
+        followingCount: {
+          $size: "$following"
         },
-        isSubscribed: {
+        isFollowing: {
           $cond: {
-            if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+            if: { $in: [req.user?._id, "$followers.follower"] },
             then: true,
             else: false
           }
@@ -428,9 +428,9 @@ export const getUserChannelProfile = asyncHandler(async (req, res) => {
       $project: {
         fullName: 1,
         username: 1,
-        subscribersCount: 1,
-        channelsSubscribedToCount: 1,
-        isSubscribed: 1,
+        followersCount: 1,
+        followingCount: 1,
+        isFollowing: 1,
         avatar: 1,
         coverImage: 1,
         email: 1,
@@ -449,6 +449,7 @@ export const getUserChannelProfile = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, channel[0], "User channel fetched successfully"));
 });
+
 
 export const getWatchHistory = asyncHandler(async (req, res) => {
   const user = await User.aggregate([

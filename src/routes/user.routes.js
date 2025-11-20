@@ -1,7 +1,7 @@
 import express from 'express';
 import auth from '../middlewares/auth.js';
 import upload from '../middlewares/upload.js';
-import SubscriptionController from '../controllers/subscription.controller.js';
+import FollowController from '../controllers/follow.controller.js';
 import {
   getCurrentUser,
   updateAccountDetails,
@@ -14,10 +14,11 @@ import {
 
 const router = express.Router();
 
-// Subscription routes
-router.post('/subscribe/:channelId', auth, SubscriptionController.subscribe);
-router.post('/unsubscribe/:channelId', auth, SubscriptionController.unsubscribe);
-router.get('/subscriptions', auth, SubscriptionController.getSubscriptions);
+// Follow routes
+router.post('/follow/:userId', auth, FollowController.followUser);
+router.post('/unfollow/:userId', auth, FollowController.unfollowUser);
+router.get('/followers/:userId?', auth, FollowController.getFollowers);
+router.get('/following/:userId?', auth, FollowController.getFollowing);
 
 // User profile routes
 router.get('/current', auth, getCurrentUser);

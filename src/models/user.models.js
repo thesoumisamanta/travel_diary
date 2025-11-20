@@ -61,7 +61,11 @@ const userSchema = new Schema({
     refreshToken: {
         type: String
     },
-    subscribersCount: {
+    followersCount: {
+        type: Number,
+        default: 0
+    },
+    followingCount: {
         type: Number,
         default: 0
     }

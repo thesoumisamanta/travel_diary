@@ -49,15 +49,6 @@ app.use('/api/videos', videoRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/playlists', playlistRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    ok: true, 
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV 
-  });
-});
-
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({ 

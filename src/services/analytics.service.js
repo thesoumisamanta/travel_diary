@@ -1,5 +1,5 @@
-import Video from '../models/Video.js';
-import Subscription from '../models/subscription.models.js';
+import Video from '../models/video.models.js';
+import Follow from '../models/follow.models.js';
 import Comment from '../models/comment.models.js';
 
 /**
@@ -12,13 +12,15 @@ export const getDashboardStats = async (userId) => {
     { $group: { _id: null, totalViews: { $sum: '$views' } } }
   ]);
 
-  const subscribers = await Subscription.countDocuments({ channel: userId });
+  const followers = await Follow.countDocuments({ following: userId });
+  const following = await Follow.countDocuments({ follower: userId });
   const comments = await Comment.countDocuments({ author: userId });
 
   return {
     videosCount,
     totalViews: totalViewsAgg[0]?.totalViews || 0,
-    subscribers,
+    followers,
+    following,
     comments
   };
 };
@@ -28,5 +30,5 @@ export const getDashboardStats = async (userId) => {
  */
 export const getTrendingVideos = async (limit = 10) => {
   return Video.find({ isPublic: true }).sort({ views: -1 }).limit(limit)
-    .populate('uploader', 'name avatarUrl');
+    .populate('uploader', 'username fullName avatar');
 };
