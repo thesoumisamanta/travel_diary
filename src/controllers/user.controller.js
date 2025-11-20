@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import asyncHandler from "../utils/async_handler.js";
 import ApiError from "../utils/api_error.js";
 import ApiResponse from "../utils/api_response.js";
-import { uploadToCloudinary } from "../services/uploadService.js";
+import { uploadToCloudinary, saveLocally } from "../services/uploadService.js";
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -290,6 +290,7 @@ export const updateAccountDetails = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "Account details updated successfully"));
 });
 
+// Update user avatar - ONLY SINGLE IMAGE, NO VIDEO
 export const updateUserAvatar = asyncHandler(async (req, res) => {
   if (!req.file) {
     throw new ApiError(400, "Avatar file is missing");
@@ -306,11 +307,15 @@ export const updateUserAvatar = asyncHandler(async (req, res) => {
       );
       avatarUrl = uploaded.secure_url;
     } else {
-      const { saveLocally } = await import('../services/uploadService.js');
-      const saved = await saveLocally(req.file.buffer, req.file.originalname, 'public/uploads/avatars');
+      const saved = await saveLocally(
+        req.file.buffer, 
+        req.file.originalname, 
+        'public/uploads/avatars'
+      );
       avatarUrl = saved.url;
     }
   } catch (error) {
+    console.error("Avatar upload error:", error);
     throw new ApiError(400, "Error while uploading avatar");
   }
 
@@ -329,6 +334,7 @@ export const updateUserAvatar = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "Avatar updated successfully"));
 });
 
+// Update user cover image - ONLY SINGLE IMAGE, NO VIDEO
 export const updateUserCoverImage = asyncHandler(async (req, res) => {
   if (!req.file) {
     throw new ApiError(400, "Cover image file is missing");
@@ -345,11 +351,15 @@ export const updateUserCoverImage = asyncHandler(async (req, res) => {
       );
       coverImageUrl = uploaded.secure_url;
     } else {
-      const { saveLocally } = await import('../services/uploadService.js');
-      const saved = await saveLocally(req.file.buffer, req.file.originalname, 'public/uploads/covers');
+      const saved = await saveLocally(
+        req.file.buffer, 
+        req.file.originalname, 
+        'public/uploads/covers'
+      );
       coverImageUrl = saved.url;
     }
   } catch (error) {
+    console.error("Cover image upload error:", error);
     throw new ApiError(400, "Error while uploading cover image");
   }
 
