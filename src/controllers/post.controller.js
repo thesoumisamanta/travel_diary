@@ -10,12 +10,15 @@ const uploadPostSchema = Joi.object({
   tags: Joi.string().allow('')
 });
 
+// ✅ FIXED: Properly convert ObjectIds to strings for comparison
 const addUserLikeState = (post, userId) => {
   const postObj = post.toObject ? post.toObject() : post;
+  const userIdStr = userId?.toString();
+  
   return {
     ...postObj,
-    isLiked: postObj.likes?.includes(userId?.toString()) || false,
-    isDisliked: postObj.dislikes?.includes(userId?.toString()) || false,
+    isLiked: postObj.likes?.some(id => id.toString() === userIdStr) || false,
+    isDisliked: postObj.dislikes?.some(id => id.toString() === userIdStr) || false,
     likesCount: postObj.likes?.length || 0,
     dislikesCount: postObj.dislikes?.length || 0
   };
@@ -156,6 +159,7 @@ export const getPost = async (req, res) => {
   }
 };
 
+// ✅ FIXED: Improved like/dislike logic
 export const likePost = async (req, res) => {
   try {
     const id = req.params.id;
@@ -169,19 +173,22 @@ export const likePost = async (req, res) => {
     const alreadyLiked = post.likes.includes(userId);
 
     if (alreadyLiked) {
+      // Unlike: remove from likes
       post.likes.pull(userId);
     } else {
+      // Like: add to likes and remove from dislikes if present
       post.likes.push(userId);
-      post.dislikes.pull(userId); 
+      post.dislikes.pull(userId);
     }
 
     await post.save();
 
+    // ✅ Return consistent response with proper boolean values
     res.json({
       likes: post.likes.length,
       dislikes: post.dislikes.length,
-      isLiked: post.likes.includes(userId),
-      isDisliked: post.dislikes.includes(userId)
+      isLiked: post.likes.some(id => id.toString() === userId.toString()),
+      isDisliked: post.dislikes.some(id => id.toString() === userId.toString())
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -201,19 +208,22 @@ export const dislikePost = async (req, res) => {
     const alreadyDisliked = post.dislikes.includes(userId);
 
     if (alreadyDisliked) {
+      // Remove dislike
       post.dislikes.pull(userId);
     } else {
+      // Dislike: add to dislikes and remove from likes if present
       post.dislikes.push(userId);
-      post.likes.pull(userId); 
+      post.likes.pull(userId);
     }
 
     await post.save();
 
+    // ✅ Return consistent response with proper boolean values
     res.json({
       likes: post.likes.length,
       dislikes: post.dislikes.length,
-      isLiked: post.likes.includes(userId),
-      isDisliked: post.dislikes.includes(userId)
+      isLiked: post.likes.some(id => id.toString() === userId.toString()),
+      isDisliked: post.dislikes.some(id => id.toString() === userId.toString())
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -239,6 +249,7 @@ export const listPosts = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 export const getFeed = async (req, res) => {
   try {
     const currentUserId = req.user._id;
@@ -275,7 +286,6 @@ export const getFeed = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 export const getUserPosts = async (req, res) => {
   try {
