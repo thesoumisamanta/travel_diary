@@ -8,24 +8,54 @@ import {
   updateUserCoverImage,
   getUserChannelProfile,
   getWatchHistory,
-  changeCurrentPassword
+  changeCurrentPassword,
+  followUser,
+  unfollowUser,
+  getFollowers,
+  getFollowing,
+  checkFollowStatus
 } from '../controllers/user.controller.js';
 
 const router = express.Router();
 
-// User profile routes
+// ==================== USER PROFILE ROUTES ====================
+
+// Get current authenticated user
 router.get('/current', auth, getCurrentUser);
+
+// Update account details
 router.patch('/update-account', auth, updateAccountDetails);
+
+// Change password
 router.patch('/change-password', auth, changeCurrentPassword);
 
-// Avatar and cover image routes
+// Update avatar (image only)
 router.patch('/avatar', auth, upload.single('avatar'), updateUserAvatar);
+
+// Update cover image (image only)
 router.patch('/cover-image', auth, upload.single('coverImage'), updateUserCoverImage);
 
-// Channel profile
+// Get user channel profile by username
 router.get('/channel/:username', getUserChannelProfile);
 
-// Watch history
+// Get watch history
 router.get('/watch-history', auth, getWatchHistory);
+
+// ==================== FOLLOW/UNFOLLOW ROUTES ====================
+
+// Follow a user
+router.post('/follow/:userId', auth, followUser);
+
+// Unfollow a user
+router.post('/unfollow/:userId', auth, unfollowUser);
+
+// Get followers of a user (userId optional - defaults to current user)
+router.get('/followers/:userId?', auth, getFollowers);
+
+// Get following of a user (userId optional - defaults to current user)
+router.get('/following/:userId?', auth, getFollowing);
+
+// Check if current user follows target user
+router.get('/status/:userId', auth, checkFollowStatus);
 
 export default router;

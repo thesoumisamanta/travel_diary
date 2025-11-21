@@ -55,21 +55,40 @@ const userSchema = new Schema({
     watchHistory: [
         {
             type: Schema.Types.ObjectId,
-            ref: "Video"
+            ref: "Post"
+        }
+    ],
+    // Array of user IDs who follow this user
+    followers: [
+        {
+            type: Schema.Types.ObjectId,
+            ref: "User"
+        }
+    ],
+    // Array of user IDs that this user follows
+    following: [
+        {
+            type: Schema.Types.ObjectId,
+            ref: "User"
         }
     ],
     refreshToken: {
         type: String
-    },
-    followersCount: {
-        type: Number,
-        default: 0
-    },
-    followingCount: {
-        type: Number,
-        default: 0
     }
 }, { timestamps: true });
+
+// Virtual fields for counts (computed from array length)
+userSchema.virtual('followersCount').get(function() {
+    return this.followers ? this.followers.length : 0;
+});
+
+userSchema.virtual('followingCount').get(function() {
+    return this.following ? this.following.length : 0;
+});
+
+// Ensure virtuals are included when converting to JSON
+userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toObject', { virtuals: true });
 
 // Hash password before saving
 userSchema.pre("save", async function (next) {

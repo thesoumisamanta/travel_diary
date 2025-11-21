@@ -1,5 +1,5 @@
 import Post from '../models/post.models.js';
-import Follow from '../models/follow.models.js';
+import User from '../models/user.models.js';
 import { uploadToCloudinary, saveLocally } from '../services/uploadService.js';
 import mongoose from 'mongoose';
 import Joi from 'joi';
@@ -20,6 +20,20 @@ export const uploadPost = async (req, res) => {
 
     const hasVideo = req.files && req.files['video'];
     const hasImages = req.files && req.files['images'];
+
+    // Validation: Cannot upload both video and images
+    if (hasVideo && hasImages) {
+      return res.status(400).json({ 
+        message: 'Cannot upload both video and images together. Please upload either a video OR images.' 
+      });
+    }
+
+    // Validation: Must upload something
+    if (!hasVideo && !hasImages) {
+      return res.status(400).json({ 
+        message: 'Please upload either a video or at least one image' 
+      });
+    }
 
     // Parse tags
     const tags = value.tags ? value.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -62,9 +76,17 @@ export const uploadPost = async (req, res) => {
       }
     }
 
-    // Handle IMAGES upload (multiple images)
+    // Handle IMAGES upload (multiple images, max 10)
     if (hasImages) {
       const imageFiles = hasImages;
+
+      // Validation: Max 10 images
+      if (imageFiles.length > 10) {
+        return res.status(400).json({ 
+          message: 'Maximum 10 images allowed per post' 
+        });
+      }
+
       const uploadedImages = [];
 
       for (const imageFile of imageFiles) {
@@ -97,8 +119,6 @@ export const uploadPost = async (req, res) => {
       await post.save();
       return res.status(201).json(post);
     }
-
-    return res.status(400).json({ message: 'No valid files uploaded' });
 
   } catch (err) {
     console.error('Upload error:', err);
@@ -201,7 +221,7 @@ export const listPosts = async (req, res) => {
   }
 };
 
-// Get feed - ONLY posts from followed users
+// Get feed - ONLY posts from followed users (NOT including current user's own posts)
 export const getFeed = async (req, res) => {
   try {
     const currentUserId = req.user._id;
@@ -209,16 +229,21 @@ export const getFeed = async (req, res) => {
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
-    // Get list of users that current user follows
-    const following = await Follow.find({ follower: currentUserId })
-      .select('following');
+    // Get current user's following array
+    const currentUser = await User.findById(currentUserId).select('following');
     
-    const followingIds = following.map(f => f.following);
+    if (!currentUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    // Include current user's own posts in feed
-    followingIds.push(currentUserId);
+    const followingIds = currentUser.following;
 
-    // Get posts only from followed users
+    // If not following anyone, return empty array
+    if (followingIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Get posts ONLY from followed users (NOT including current user)
     const posts = await Post.find({ 
       uploader: { $in: followingIds },
       isPublic: true 
@@ -235,7 +260,7 @@ export const getFeed = async (req, res) => {
   }
 };
 
-// Get user's own posts
+// Get user's own posts (for profile page)
 export const getUserPosts = async (req, res) => {
   try {
     const { userId } = req.params;

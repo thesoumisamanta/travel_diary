@@ -1,5 +1,3 @@
-import Video from '../models/video.models.js';
-import Follow from '../models/follow.models.js';
 import Comment from '../models/comment.models.js';
 
 /**

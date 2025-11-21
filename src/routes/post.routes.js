@@ -23,16 +23,18 @@ router.get('/:id', getPost);
 // Protected routes
 router.use(auth);
 
-// Upload post (video OR images)
+// Upload post (video OR images - user chooses via form fields)
+// Use 'video' field for uploading 1 video
+// Use 'images' field for uploading up to 10 images
 router.post('/upload', upload.fields([
   { name: 'video', maxCount: 1 },
   { name: 'images', maxCount: 10 }
 ]), uploadPost);
 
-// Feed - only followed users' posts
+// Unified feed - shows posts from ONLY followed users (not current user's posts)
 router.get('/feed/following', getFeed);
 
-// User's own posts
+// Get specific user's posts (for profile page)
 router.get('/user/:userId', getUserPosts);
 
 // Like/Dislike

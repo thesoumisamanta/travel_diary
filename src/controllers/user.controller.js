@@ -1,6 +1,5 @@
 import User from "../models/user.models.js";
 import Post from "../models/post.models.js";
-import Video from "../models/video.models.js";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import asyncHandler from "../utils/async_handler.js";
@@ -28,6 +27,8 @@ const generateAccessAndRefreshTokens = async (userId) => {
     throw new ApiError(500, "Something went wrong while generating tokens");
   }
 };
+
+// ==================== AUTH FUNCTIONS ====================
 
 export const registerUser = asyncHandler(async (req, res) => {
   const { fullName, email, username, password, accountType } = req.body;
@@ -223,31 +224,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
   }
 });
 
-export const changeCurrentPassword = asyncHandler(async (req, res) => {
-  const { oldPassword, newPassword } = req.body;
-
-  if (!oldPassword || !newPassword) {
-    throw new ApiError(400, "Old password and new password are required");
-  }
-
-  if (newPassword.length < 6) {
-    throw new ApiError(400, "New password must be at least 6 characters long");
-  }
-
-  const user = await User.findById(req.user?._id);
-  const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
-
-  if (!isPasswordCorrect) {
-    throw new ApiError(400, "Invalid old password");
-  }
-
-  user.password = newPassword;
-  await user.save({ validateBeforeSave: false });
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, {}, "Password changed successfully"));
-});
+// ==================== USER PROFILE FUNCTIONS ====================
 
 export const getCurrentUser = asyncHandler(async (req, res) => {
   console.log("Getting current user:", req.user?._id);
@@ -263,20 +240,15 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
     throw new ApiError(404, "User not found");
   }
 
-  // Get user's posts and videos
+  // Get user's posts (both video and image posts)
   const posts = await Post.find({ uploader: user._id, isPublic: true })
     .sort({ createdAt: -1 })
     .select('_id title postType videoUrl images thumbnailUrl createdAt views likes dislikes');
 
-  const videos = await Video.find({ uploader: user._id, isPublic: true })
-    .sort({ createdAt: -1 })
-    .select('_id title fileUrl thumbnailUrl createdAt views likes dislikes duration');
-
-  // Add posts and videos to user object
+  // Add posts to user object
   const userWithContent = {
     ...user.toObject(),
-    posts: posts,
-    videos: videos
+    posts: posts
   };
 
   return res
@@ -308,7 +280,32 @@ export const updateAccountDetails = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "Account details updated successfully"));
 });
 
-// Update user avatar - ONLY SINGLE IMAGE, NO VIDEO
+export const changeCurrentPassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+
+  if (!oldPassword || !newPassword) {
+    throw new ApiError(400, "Old password and new password are required");
+  }
+
+  if (newPassword.length < 6) {
+    throw new ApiError(400, "New password must be at least 6 characters long");
+  }
+
+  const user = await User.findById(req.user?._id);
+  const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+
+  if (!isPasswordCorrect) {
+    throw new ApiError(400, "Invalid old password");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password changed successfully"));
+});
+
 export const updateUserAvatar = asyncHandler(async (req, res) => {
   if (!req.file) {
     throw new ApiError(400, "Avatar file is missing");
@@ -352,7 +349,6 @@ export const updateUserAvatar = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "Avatar updated successfully"));
 });
 
-// Update user cover image - ONLY SINGLE IMAGE, NO VIDEO
 export const updateUserCoverImage = asyncHandler(async (req, res) => {
   if (!req.file) {
     throw new ApiError(400, "Cover image file is missing");
@@ -403,138 +399,215 @@ export const getUserChannelProfile = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Username is missing");
   }
 
-  const channel = await User.aggregate([
-    {
-      $match: {
-        username: username?.toLowerCase()
-      }
-    },
-    {
-      $lookup: {
-        from: "follows",
-        localField: "_id",
-        foreignField: "following",
-        as: "followers"
-      }
-    },
-    {
-      $lookup: {
-        from: "follows",
-        localField: "_id",
-        foreignField: "follower",
-        as: "following"
-      }
-    },
-    {
-      $addFields: {
-        followersCount: {
-          $size: "$followers"
-        },
-        followingCount: {
-          $size: "$following"
-        },
-        isFollowing: {
-          $cond: {
-            if: { $in: [req.user?._id, "$followers.follower"] },
-            then: true,
-            else: false
-          }
-        }
-      }
-    },
-    {
-      $project: {
-        fullName: 1,
-        username: 1,
-        followersCount: 1,
-        followingCount: 1,
-        isFollowing: 1,
-        avatar: 1,
-        coverImage: 1,
-        email: 1,
-        bio: 1,
-        description: 1,
-        accountType: 1
-      }
-    }
-  ]);
+  // Find user by username
+  const user = await User.findOne({ username: username.toLowerCase() })
+    .select("-password -refreshToken");
 
-  if (!channel?.length) {
+  if (!user) {
     throw new ApiError(404, "Channel does not exist");
   }
 
-  const userId = channel[0]._id;
+  // Check if current user follows this channel
+  let isFollowing = false;
+  if (req.user && req.user._id) {
+    isFollowing = user.followers.includes(req.user._id);
+  }
 
-  // Get user's posts and videos
-  const posts = await Post.find({ uploader: userId, isPublic: true })
+  // Get user's posts
+  const posts = await Post.find({ uploader: user._id, isPublic: true })
     .sort({ createdAt: -1 })
     .select('_id title postType videoUrl images thumbnailUrl createdAt views likes dislikes');
 
-  const videos = await Video.find({ uploader: userId, isPublic: true })
-    .sort({ createdAt: -1 })
-    .select('_id title fileUrl thumbnailUrl createdAt views likes dislikes duration');
-
-  const channelWithContent = {
-    ...channel[0],
-    posts: posts,
-    videos: videos
+  const channelProfile = {
+    ...user.toObject(),
+    isFollowing,
+    posts
   };
 
   return res
     .status(200)
-    .json(new ApiResponse(200, channelWithContent, "User channel fetched successfully"));
+    .json(new ApiResponse(200, channelProfile, "User channel fetched successfully"));
 });
 
 export const getWatchHistory = asyncHandler(async (req, res) => {
-  const user = await User.aggregate([
-    {
-      $match: {
-        _id: new mongoose.Types.ObjectId(req.user._id)
+  const user = await User.findById(req.user._id)
+    .populate({
+      path: 'watchHistory',
+      populate: {
+        path: 'uploader',
+        select: 'username fullName avatar'
       }
-    },
-    {
-      $lookup: {
-        from: "videos",
-        localField: "watchHistory",
-        foreignField: "_id",
-        as: "watchHistory",
-        pipeline: [
-          {
-            $lookup: {
-              from: "users",
-              localField: "owner",
-              foreignField: "_id",
-              as: "owner",
-              pipeline: [
-                {
-                  $project: {
-                    fullName: 1,
-                    username: 1,
-                    avatar: 1
-                  }
-                }
-              ]
-            }
-          },
-          {
-            $addFields: {
-              owner: {
-                $first: "$owner"
-              }
-            }
-          }
-        ]
-      }
-    }
-  ]);
+    });
 
   return res
     .status(200)
     .json(
       new ApiResponse(
         200,
-        user[0].watchHistory,
+        user.watchHistory,
         "Watch history fetched successfully"
       )
     );
+});
+
+// ==================== FOLLOW/UNFOLLOW FUNCTIONS ====================
+
+export const followUser = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const currentUserId = req.user._id;
+
+  // Validate userId
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new ApiError(400, "Invalid user ID");
+  }
+
+  // Cannot follow yourself
+  if (userId === currentUserId.toString()) {
+    throw new ApiError(400, "You cannot follow yourself");
+  }
+
+  // Check if target user exists
+  const targetUser = await User.findById(userId);
+  if (!targetUser) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // Check if already following
+  const currentUser = await User.findById(currentUserId);
+  if (currentUser.following.includes(userId)) {
+    throw new ApiError(400, "You are already following this user");
+  }
+
+  // Add to current user's following array
+  await User.findByIdAndUpdate(currentUserId, {
+    $addToSet: { following: userId }
+  });
+
+  // Add to target user's followers array
+  await User.findByIdAndUpdate(userId, {
+    $addToSet: { followers: currentUserId }
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "User followed successfully"));
+});
+
+export const unfollowUser = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const currentUserId = req.user._id;
+
+  // Validate userId
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new ApiError(400, "Invalid user ID");
+  }
+
+  // Check if currently following
+  const currentUser = await User.findById(currentUserId);
+  if (!currentUser.following.includes(userId)) {
+    throw new ApiError(400, "You are not following this user");
+  }
+
+  // Remove from current user's following array
+  await User.findByIdAndUpdate(currentUserId, {
+    $pull: { following: userId }
+  });
+
+  // Remove from target user's followers array
+  await User.findByIdAndUpdate(userId, {
+    $pull: { followers: currentUserId }
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "User unfollowed successfully"));
+});
+
+export const getFollowers = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
+  const skip = (page - 1) * limit;
+
+  // Use current user's ID if userId not provided
+  const targetUserId = userId || req.user._id;
+
+  if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+    throw new ApiError(400, "Invalid user ID");
+  }
+
+  // Get user and populate followers with pagination
+  const user = await User.findById(targetUserId)
+    .select('followers')
+    .populate({
+      path: 'followers',
+      select: 'username fullName avatar bio',
+      options: {
+        skip: skip,
+        limit: limit
+      }
+    });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user.followers, "Followers fetched successfully"));
+});
+
+export const getFollowing = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
+  const skip = (page - 1) * limit;
+
+  // Use current user's ID if userId not provided
+  const targetUserId = userId || req.user._id;
+
+  if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+    throw new ApiError(400, "Invalid user ID");
+  }
+
+  // Get user and populate following with pagination
+  const user = await User.findById(targetUserId)
+    .select('following')
+    .populate({
+      path: 'following',
+      select: 'username fullName avatar bio',
+      options: {
+        skip: skip,
+        limit: limit
+      }
+    });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user.following, "Following fetched successfully"));
+});
+
+export const checkFollowStatus = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const currentUserId = req.user._id;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new ApiError(400, "Invalid user ID");
+  }
+
+  const currentUser = await User.findById(currentUserId).select('following');
+  
+  if (!currentUser) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const isFollowing = currentUser.following.includes(userId);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { isFollowing }, "Follow status fetched"));
 });

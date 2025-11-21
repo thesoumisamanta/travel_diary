@@ -9,7 +9,7 @@ import cookieParser from 'cookie-parser';
 import { initCloudinary } from './config/cloudinary.js';
 import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
-import videoRoutes from './routes/video.routes.js';
+import postRoutes from './routes/post.routes.js';
 import commentRoutes from './routes/comment.routes.js';
 import playlistRoutes from './routes/playlist.routes.js';
 import errorHandler from './middlewares/errorHandler.js';
@@ -45,7 +45,7 @@ app.use(express.static('public'));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/videos', videoRoutes);
+app.use('/api/posts', postRoutes); // Unified posts route (handles both videos and images)
 app.use('/api/comments', commentRoutes);
 app.use('/api/playlists', playlistRoutes);
 

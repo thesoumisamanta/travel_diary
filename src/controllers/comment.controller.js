@@ -1,5 +1,4 @@
 import Comment from '../models/comment.models.js';
-import Video from '../models/video.models.js';
 import Joi from 'joi';
 
 

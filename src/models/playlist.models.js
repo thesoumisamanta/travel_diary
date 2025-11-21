@@ -6,7 +6,6 @@ const playlistSchema = new mongoose.Schema({
   description: { type: String },
   videos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Video' }],
   isPublic: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now }
-});
+}, { timestamps: true });
 
 export default mongoose.model('Playlist', playlistSchema);
