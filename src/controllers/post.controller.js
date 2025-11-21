@@ -10,7 +10,17 @@ const uploadPostSchema = Joi.object({
   tags: Joi.string().allow('')
 });
 
-// Upload post (either video or images)
+const addUserLikeState = (post, userId) => {
+  const postObj = post.toObject ? post.toObject() : post;
+  return {
+    ...postObj,
+    isLiked: postObj.likes?.includes(userId?.toString()) || false,
+    isDisliked: postObj.dislikes?.includes(userId?.toString()) || false,
+    likesCount: postObj.likes?.length || 0,
+    dislikesCount: postObj.dislikes?.length || 0
+  };
+};
+
 export const uploadPost = async (req, res) => {
   try {
     const { error, value } = uploadPostSchema.validate(req.body);
@@ -21,31 +31,27 @@ export const uploadPost = async (req, res) => {
     const hasVideo = req.files && req.files['video'];
     const hasImages = req.files && req.files['images'];
 
-    // Validation: Cannot upload both video and images
     if (hasVideo && hasImages) {
-      return res.status(400).json({ 
-        message: 'Cannot upload both video and images together. Please upload either a video OR images.' 
+      return res.status(400).json({
+        message: 'Cannot upload both video and images together. Please upload either a video OR images.'
       });
     }
 
-    // Validation: Must upload something
     if (!hasVideo && !hasImages) {
-      return res.status(400).json({ 
-        message: 'Please upload either a video or at least one image' 
+      return res.status(400).json({
+        message: 'Please upload either a video or at least one image'
       });
     }
 
-    // Parse tags
     const tags = value.tags ? value.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
 
-    // Handle VIDEO upload
     if (hasVideo) {
       const videoFile = hasVideo[0];
       const filename = videoFile.originalname;
 
       if (process.env.CLOUDINARY_API_KEY) {
         const uploaded = await uploadToCloudinary(videoFile.buffer, filename, 'posts/videos');
-        
+
         const post = new Post({
           title: value.title,
           description: value.description,
@@ -61,7 +67,7 @@ export const uploadPost = async (req, res) => {
         return res.status(201).json(post);
       } else {
         const saved = await saveLocally(videoFile.buffer, filename, 'public/uploads/posts/videos');
-        
+
         const post = new Post({
           title: value.title,
           description: value.description,
@@ -76,14 +82,12 @@ export const uploadPost = async (req, res) => {
       }
     }
 
-    // Handle IMAGES upload (multiple images, max 10)
     if (hasImages) {
       const imageFiles = hasImages;
 
-      // Validation: Max 10 images
       if (imageFiles.length > 10) {
-        return res.status(400).json({ 
-          message: 'Maximum 10 images allowed per post' 
+        return res.status(400).json({
+          message: 'Maximum 10 images allowed per post'
         });
       }
 
@@ -126,31 +130,32 @@ export const uploadPost = async (req, res) => {
   }
 };
 
-// Get single post
 export const getPost = async (req, res) => {
   try {
     const id = req.params.id;
+    const userId = req.user?._id;
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid id' });
     }
 
     const post = await Post.findByIdAndUpdate(
-      id, 
-      { $inc: { views: 1 } }, 
+      id,
+      { $inc: { views: 1 } },
       { new: true }
-    ).populate('uploader', 'username fullName avatar');
+    ).populate('uploader', 'username fullName avatar followersCount followingCount');
 
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-    res.json(post);
+    const postWithLikeState = addUserLikeState(post, userId);
+    res.json(postWithLikeState);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// Like post
 export const likePost = async (req, res) => {
   try {
     const id = req.params.id;
@@ -161,22 +166,28 @@ export const likePost = async (req, res) => {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-    // Toggle like
-    if (post.likes.includes(userId)) {
+    const alreadyLiked = post.likes.includes(userId);
+
+    if (alreadyLiked) {
       post.likes.pull(userId);
     } else {
       post.likes.push(userId);
-      post.dislikes.pull(userId); // Remove dislike if present
+      post.dislikes.pull(userId); 
     }
 
     await post.save();
-    res.json({ likes: post.likes.length, dislikes: post.dislikes.length });
+
+    res.json({
+      likes: post.likes.length,
+      dislikes: post.dislikes.length,
+      isLiked: post.likes.includes(userId),
+      isDisliked: post.dislikes.includes(userId)
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// Dislike post
 export const dislikePost = async (req, res) => {
   try {
     const id = req.params.id;
@@ -187,24 +198,31 @@ export const dislikePost = async (req, res) => {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-    // Toggle dislike
-    if (post.dislikes.includes(userId)) {
+    const alreadyDisliked = post.dislikes.includes(userId);
+
+    if (alreadyDisliked) {
       post.dislikes.pull(userId);
     } else {
       post.dislikes.push(userId);
-      post.likes.pull(userId); // Remove like if present
+      post.likes.pull(userId); 
     }
 
     await post.save();
-    res.json({ likes: post.likes.length, dislikes: post.dislikes.length });
+
+    res.json({
+      likes: post.likes.length,
+      dislikes: post.dislikes.length,
+      isLiked: post.likes.includes(userId),
+      isDisliked: post.dislikes.includes(userId)
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// List all posts with pagination (PUBLIC - all posts)
 export const listPosts = async (req, res) => {
   try {
+    const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
@@ -213,15 +231,14 @@ export const listPosts = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('uploader', 'username fullName avatar');
+      .populate('uploader', 'username fullName avatar followersCount followingCount');
 
-    res.json(posts);
+    const postsWithLikeState = posts.map(post => addUserLikeState(post, userId));
+    res.json(postsWithLikeState);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
-// Get feed - ONLY posts from followed users (NOT including current user's own posts)
 export const getFeed = async (req, res) => {
   try {
     const currentUserId = req.user._id;
@@ -229,41 +246,41 @@ export const getFeed = async (req, res) => {
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
-    // Get current user's following array
     const currentUser = await User.findById(currentUserId).select('following');
-    
+
     if (!currentUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const followingIds = currentUser.following;
 
-    // If not following anyone, return empty array
     if (followingIds.length === 0) {
       return res.json([]);
     }
 
-    // Get posts ONLY from followed users (NOT including current user)
-    const posts = await Post.find({ 
+    const posts = await Post.find({
       uploader: { $in: followingIds },
-      isPublic: true 
+      isPublic: true
     })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('uploader', 'username fullName avatar');
+      .populate('uploader', 'username fullName avatar followersCount followingCount');
 
-    res.json(posts);
+    const postsWithLikeState = posts.map(post => addUserLikeState(post, currentUserId));
+
+    res.json(postsWithLikeState);
   } catch (err) {
     console.error('Feed error:', err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Get user's own posts (for profile page)
+
 export const getUserPosts = async (req, res) => {
   try {
     const { userId } = req.params;
+    const currentUserId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
@@ -272,24 +289,25 @@ export const getUserPosts = async (req, res) => {
       return res.status(400).json({ message: 'Invalid user ID' });
     }
 
-    const posts = await Post.find({ 
+    const posts = await Post.find({
       uploader: userId,
-      isPublic: true 
+      isPublic: true
     })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('uploader', 'username fullName avatar');
+      .populate('uploader', 'username fullName avatar followersCount followingCount');
 
-    res.json(posts);
+    const postsWithLikeState = posts.map(post => addUserLikeState(post, currentUserId));
+    res.json(postsWithLikeState);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// Search posts
 export const searchPosts = async (req, res) => {
   try {
+    const userId = req.user?._id;
     const q = req.query.q || '';
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
@@ -299,27 +317,28 @@ export const searchPosts = async (req, res) => {
       return res.status(400).json({ message: 'Query required' });
     }
 
-    const posts = await Post.find({ 
-      $text: { $search: q }, 
-      isPublic: true 
+    const posts = await Post.find({
+      $text: { $search: q },
+      isPublic: true
     })
       .skip(skip)
       .limit(limit)
-      .populate('uploader', 'username fullName avatar');
+      .populate('uploader', 'username fullName avatar followersCount followingCount');
 
-    res.json(posts);
+    const postsWithLikeState = posts.map(post => addUserLikeState(post, userId));
+    res.json(postsWithLikeState);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-export default { 
-  uploadPost, 
-  getPost, 
-  likePost, 
-  dislikePost, 
+export default {
+  uploadPost,
+  getPost,
+  likePost,
+  dislikePost,
   listPosts,
   getFeed,
   getUserPosts,
-  searchPosts 
+  searchPosts
 };
