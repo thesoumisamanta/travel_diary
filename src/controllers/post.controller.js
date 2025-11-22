@@ -278,11 +278,16 @@ export const listPosts = async (req, res) => {
     const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
     const postType = req.query.type; // Optional filter: 'video', 'images', 'short'
+    const shortsOnly = req.query.shortsOnly === 'true'; // NEW: Optional shorts filter
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
     const query = { isPublic: true };
-    if (postType && ['video', 'images', 'short'].includes(postType)) {
+    
+    // If shortsOnly is true, override postType and only fetch shorts
+    if (shortsOnly) {
+      query.postType = 'short';
+    } else if (postType && ['video', 'images', 'short'].includes(postType)) {
       query.postType = postType;
     }
 
@@ -304,6 +309,7 @@ export const getFeed = async (req, res) => {
     const currentUserId = req.user._id;
     const page = parseInt(req.query.page) || 1;
     const postType = req.query.type; // Optional filter
+    const shortsOnly = req.query.shortsOnly === 'true'; // NEW: Optional shorts filter
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
@@ -324,7 +330,10 @@ export const getFeed = async (req, res) => {
       isPublic: true
     };
 
-    if (postType && ['video', 'images', 'short'].includes(postType)) {
+    // If shortsOnly is true, override postType and only fetch shorts
+    if (shortsOnly) {
+      query.postType = 'short';
+    } else if (postType && ['video', 'images', 'short'].includes(postType)) {
       query.postType = postType;
     }
 
@@ -349,6 +358,7 @@ export const getUserPosts = async (req, res) => {
     const currentUserId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
     const postType = req.query.type; // Optional filter
+    const shortsOnly = req.query.shortsOnly === 'true'; // NEW: Optional shorts filter
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
@@ -361,7 +371,10 @@ export const getUserPosts = async (req, res) => {
       isPublic: true
     };
 
-    if (postType && ['video', 'images', 'short'].includes(postType)) {
+    // If shortsOnly is true, override postType and only fetch shorts
+    if (shortsOnly) {
+      query.postType = 'short';
+    } else if (postType && ['video', 'images', 'short'].includes(postType)) {
       query.postType = postType;
     }
 
@@ -383,6 +396,7 @@ export const searchPosts = async (req, res) => {
     const userId = req.user?._id;
     const q = req.query.q || '';
     const page = parseInt(req.query.page) || 1;
+    const shortsOnly = req.query.shortsOnly === 'true'; // NEW: Optional shorts filter
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
@@ -390,10 +404,17 @@ export const searchPosts = async (req, res) => {
       return res.status(400).json({ message: 'Query required' });
     }
 
-    const posts = await Post.find({
+    const query = {
       $text: { $search: q },
       isPublic: true
-    })
+    };
+
+    // If shortsOnly is true, only fetch shorts
+    if (shortsOnly) {
+      query.postType = 'short';
+    }
+
+    const posts = await Post.find(query)
       .skip(skip)
       .limit(limit)
       .populate('uploader', 'username fullName avatar followersCount followingCount');
