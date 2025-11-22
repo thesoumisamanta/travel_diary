@@ -7,10 +7,10 @@ import Joi from 'joi';
 const uploadPostSchema = Joi.object({
   title: Joi.string().min(1).required(),
   description: Joi.string().allow(''),
-  tags: Joi.string().allow('')
+  tags: Joi.string().allow(''),
+  postType: Joi.string().valid('video', 'images', 'short').optional()
 });
 
-// ✅ FIXED: Properly convert ObjectIds to strings for comparison
 const addUserLikeState = (post, userId) => {
   const postObj = post.toObject ? post.toObject() : post;
   const userIdStr = userId?.toString();
@@ -33,21 +33,70 @@ export const uploadPost = async (req, res) => {
 
     const hasVideo = req.files && req.files['video'];
     const hasImages = req.files && req.files['images'];
+    const hasShort = req.files && req.files['short'];
 
-    if (hasVideo && hasImages) {
+    // Validate: only one type allowed
+    const uploadTypes = [hasVideo, hasImages, hasShort].filter(Boolean).length;
+    if (uploadTypes > 1) {
       return res.status(400).json({
-        message: 'Cannot upload both video and images together. Please upload either a video OR images.'
+        message: 'Cannot upload multiple types. Please upload either video, images, OR short.'
       });
     }
 
-    if (!hasVideo && !hasImages) {
+    if (!hasVideo && !hasImages && !hasShort) {
       return res.status(400).json({
-        message: 'Please upload either a video or at least one image'
+        message: 'Please upload either a video, images, or a short video'
       });
     }
 
     const tags = value.tags ? value.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
 
+    // Handle SHORT video upload
+    if (hasShort) {
+      const shortFile = hasShort[0];
+      const filename = shortFile.originalname;
+
+      if (process.env.CLOUDINARY_API_KEY) {
+        const uploaded = await uploadToCloudinary(shortFile.buffer, filename, 'posts/shorts');
+
+        // Validate short duration (max 60 seconds)
+        if (uploaded.duration && uploaded.duration > 60) {
+          return res.status(400).json({
+            message: 'Shorts must be 60 seconds or less'
+          });
+        }
+
+        const post = new Post({
+          title: value.title,
+          description: value.description,
+          tags,
+          uploader: req.user._id,
+          postType: 'short',
+          videoUrl: uploaded.secure_url,
+          thumbnailUrl: uploaded.format && uploaded.resource_type !== 'image' ? null : uploaded.secure_url,
+          duration: uploaded.duration || null
+        });
+
+        await post.save();
+        return res.status(201).json(post);
+      } else {
+        const saved = await saveLocally(shortFile.buffer, filename, 'public/uploads/posts/shorts');
+
+        const post = new Post({
+          title: value.title,
+          description: value.description,
+          tags,
+          uploader: req.user._id,
+          postType: 'short',
+          videoUrl: saved.url
+        });
+
+        await post.save();
+        return res.status(201).json(post);
+      }
+    }
+
+    // Handle VIDEO upload
     if (hasVideo) {
       const videoFile = hasVideo[0];
       const filename = videoFile.originalname;
@@ -85,6 +134,7 @@ export const uploadPost = async (req, res) => {
       }
     }
 
+    // Handle IMAGES upload
     if (hasImages) {
       const imageFiles = hasImages;
 
@@ -159,7 +209,6 @@ export const getPost = async (req, res) => {
   }
 };
 
-// ✅ FIXED: Improved like/dislike logic
 export const likePost = async (req, res) => {
   try {
     const id = req.params.id;
@@ -173,17 +222,14 @@ export const likePost = async (req, res) => {
     const alreadyLiked = post.likes.includes(userId);
 
     if (alreadyLiked) {
-      // Unlike: remove from likes
       post.likes.pull(userId);
     } else {
-      // Like: add to likes and remove from dislikes if present
       post.likes.push(userId);
       post.dislikes.pull(userId);
     }
 
     await post.save();
 
-    // ✅ Return consistent response with proper boolean values
     res.json({
       likes: post.likes.length,
       dislikes: post.dislikes.length,
@@ -208,17 +254,14 @@ export const dislikePost = async (req, res) => {
     const alreadyDisliked = post.dislikes.includes(userId);
 
     if (alreadyDisliked) {
-      // Remove dislike
       post.dislikes.pull(userId);
     } else {
-      // Dislike: add to dislikes and remove from likes if present
       post.dislikes.push(userId);
       post.likes.pull(userId);
     }
 
     await post.save();
 
-    // ✅ Return consistent response with proper boolean values
     res.json({
       likes: post.likes.length,
       dislikes: post.dislikes.length,
@@ -234,10 +277,16 @@ export const listPosts = async (req, res) => {
   try {
     const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
+    const postType = req.query.type; // Optional filter: 'video', 'images', 'short'
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
-    const posts = await Post.find({ isPublic: true })
+    const query = { isPublic: true };
+    if (postType && ['video', 'images', 'short'].includes(postType)) {
+      query.postType = postType;
+    }
+
+    const posts = await Post.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -254,6 +303,7 @@ export const getFeed = async (req, res) => {
   try {
     const currentUserId = req.user._id;
     const page = parseInt(req.query.page) || 1;
+    const postType = req.query.type; // Optional filter
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
@@ -269,10 +319,16 @@ export const getFeed = async (req, res) => {
       return res.json([]);
     }
 
-    const posts = await Post.find({
+    const query = {
       uploader: { $in: followingIds },
       isPublic: true
-    })
+    };
+
+    if (postType && ['video', 'images', 'short'].includes(postType)) {
+      query.postType = postType;
+    }
+
+    const posts = await Post.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -292,6 +348,7 @@ export const getUserPosts = async (req, res) => {
     const { userId } = req.params;
     const currentUserId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
+    const postType = req.query.type; // Optional filter
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
@@ -299,10 +356,16 @@ export const getUserPosts = async (req, res) => {
       return res.status(400).json({ message: 'Invalid user ID' });
     }
 
-    const posts = await Post.find({
+    const query = {
       uploader: userId,
       isPublic: true
-    })
+    };
+
+    if (postType && ['video', 'images', 'short'].includes(postType)) {
+      query.postType = postType;
+    }
+
+    const posts = await Post.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)

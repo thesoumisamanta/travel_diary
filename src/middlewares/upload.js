@@ -30,6 +30,14 @@ const fileFilter = (req, file, cb) => {
     return cb(null, true);
   }
   
+  // For short field, ONLY allow videos (single file, short video)
+  if (file.fieldname === 'short') {
+    if (!isVideo) {
+      return cb(new Error('Only video files are allowed for short field'), false);
+    }
+    return cb(null, true);
+  }
+  
   // For images field, ONLY allow images (multiple files, max 10)
   if (file.fieldname === 'images') {
     if (!isImage) {
