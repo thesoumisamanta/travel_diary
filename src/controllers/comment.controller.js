@@ -21,6 +21,18 @@ const addUserLikeState = (comment, userId) => {
   };
 };
 
+// Helper function to find root comment
+const findRootComment = async (commentId) => {
+  let currentComment = await Comment.findById(commentId);
+  
+  // Traverse up to find root (comment with no parent)
+  while (currentComment && currentComment.parent) {
+    currentComment = await Comment.findById(currentComment.parent);
+  }
+  
+  return currentComment;
+};
+
 // Add a comment to a post
 export const addComment = async (req, res) => {
   try {
@@ -44,6 +56,8 @@ export const addComment = async (req, res) => {
 
     // If this is a reply, check if parent comment exists
     let parentComment = null;
+    let rootComment = null;
+    
     if (value.parentId) {
       if (!mongoose.Types.ObjectId.isValid(value.parentId)) {
         return res.status(400).json({ message: 'Invalid parent comment ID' });
@@ -58,6 +72,9 @@ export const addComment = async (req, res) => {
       if (parentComment.post.toString() !== postId) {
         return res.status(400).json({ message: 'Parent comment does not belong to this post' });
       }
+      
+      // Find the root comment (the one with no parent)
+      rootComment = await findRootComment(value.parentId);
     }
 
     // Create the comment
@@ -70,10 +87,10 @@ export const addComment = async (req, res) => {
 
     await comment.save();
 
-    // Update parent comment's reply count
-    if (parentComment) {
-      parentComment.replyCount += 1;
-      await parentComment.save();
+    // Update reply count for the ROOT comment only (not intermediate replies)
+    if (rootComment) {
+      rootComment.replyCount += 1;
+      await rootComment.save();
     }
 
     // Populate author details
@@ -137,13 +154,13 @@ export const getCommentsForPost = async (req, res) => {
   }
 };
 
-// Get replies for a comment
+// Get replies for a comment (ALL nested replies, not just direct children)
 export const getRepliesForComment = async (req, res) => {
   try {
     const commentId = req.params.commentId;
     const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 100; // Increased limit for nested replies
     const skip = (page - 1) * limit;
 
     // Validate comment ID
@@ -151,17 +168,37 @@ export const getRepliesForComment = async (req, res) => {
       return res.status(400).json({ message: 'Invalid comment ID' });
     }
 
-    // Get replies
-    const replies = await Comment.find({ 
-      parent: commentId 
-    })
-      .populate('author', 'username fullName avatar isVerified')
-      .sort({ createdAt: 1 }) // Oldest first for replies
-      .skip(skip)
-      .limit(limit);
+    // Verify the comment exists
+    const parentComment = await Comment.findById(commentId);
+    if (!parentComment) {
+      return res.status(404).json({ message: 'Comment not found' });
+    }
+
+    // Get ALL replies recursively
+    const getAllReplies = async (parentId) => {
+      const directReplies = await Comment.find({ parent: parentId })
+        .populate('author', 'username fullName avatar isVerified')
+        .sort({ createdAt: 1 }); // Oldest first
+
+      const allReplies = [];
+      
+      for (const reply of directReplies) {
+        allReplies.push(reply);
+        // Recursively get nested replies
+        const nestedReplies = await getAllReplies(reply._id);
+        allReplies.push(...nestedReplies);
+      }
+      
+      return allReplies;
+    };
+
+    const allReplies = await getAllReplies(commentId);
+    
+    // Apply pagination
+    const paginatedReplies = allReplies.slice(skip, skip + limit);
 
     // Add like/dislike state for each reply
-    const repliesWithState = replies.map(reply => 
+    const repliesWithState = paginatedReplies.map(reply => 
       addUserLikeState(reply, userId)
     );
 
@@ -171,7 +208,8 @@ export const getRepliesForComment = async (req, res) => {
       pagination: {
         page,
         limit,
-        hasMore: replies.length === limit
+        total: allReplies.length,
+        hasMore: (skip + limit) < allReplies.length
       }
     });
   } catch (err) {
@@ -313,17 +351,43 @@ export const deleteComment = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to delete this comment' });
     }
 
-    // If this comment has a parent, decrease parent's reply count
+    // Count total replies (including nested)
+    const countReplies = async (parentId) => {
+      const directReplies = await Comment.find({ parent: parentId });
+      let count = directReplies.length;
+      
+      for (const reply of directReplies) {
+        count += await countReplies(reply._id);
+      }
+      
+      return count;
+    };
+
+    const totalRepliesCount = await countReplies(commentId);
+
+    // Find root comment to update its reply count
     if (comment.parent) {
-      await Comment.findByIdAndUpdate(comment.parent, {
-        $inc: { replyCount: -1 }
-      });
+      const rootComment = await findRootComment(comment.parent);
+      if (rootComment) {
+        // Decrease by 1 (for this comment) + all its nested replies
+        rootComment.replyCount = Math.max(0, rootComment.replyCount - (1 + totalRepliesCount));
+        await rootComment.save();
+      }
     }
 
-    // Delete all replies to this comment
-    await Comment.deleteMany({ parent: commentId });
+    // Delete all replies to this comment recursively
+    const deleteRepliesRecursively = async (parentId) => {
+      const replies = await Comment.find({ parent: parentId });
+      
+      for (const reply of replies) {
+        await deleteRepliesRecursively(reply._id);
+        await Comment.findByIdAndDelete(reply._id);
+      }
+    };
 
-    // Delete the comment
+    await deleteRepliesRecursively(commentId);
+
+    // Delete the comment itself
     await Comment.findByIdAndDelete(commentId);
 
     res.json({

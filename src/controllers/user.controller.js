@@ -10,7 +10,7 @@ import { uploadToCloudinary, saveLocally } from "../services/uploadService.js";
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
-    
+
     if (!user) {
       throw new ApiError(404, "User not found");
     }
@@ -31,13 +31,29 @@ const generateAccessAndRefreshTokens = async (userId) => {
 // ==================== AUTH FUNCTIONS ====================
 
 export const registerUser = asyncHandler(async (req, res) => {
-  const { fullName, email, username, password, accountType } = req.body;
+  // DEBUG: Log what's received
+  console.log("req.body:", req.body);
+  console.log("req.files:", req.files);
+
+  const { fullName, email, username, password, accountType, bio, description } = req.body;
 
   console.log("Registration attempt:", { fullName, email, username, accountType });
 
-  // Validation
-  if ([fullName, email, username, password, accountType].some((field) => !field || field?.trim() === "")) {
-    throw new ApiError(400, "All fields are required");
+  // Validation - check each field individually for better error message
+  if (!fullName || fullName.trim() === "") {
+    throw new ApiError(400, "Full name is required");
+  }
+  if (!email || email.trim() === "") {
+    throw new ApiError(400, "Email is required");
+  }
+  if (!username || username.trim() === "") {
+    throw new ApiError(400, "Username is required");
+  }
+  if (!password || password.trim() === "") {
+    throw new ApiError(400, "Password is required");
+  }
+  if (!accountType || accountType.trim() === "") {
+    throw new ApiError(400, "Account type is required");
   }
 
   // Validate account type
@@ -59,6 +75,56 @@ export const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "User with email or username already exists");
   }
 
+  // Handle optional avatar upload
+  let avatarUrl = "";
+  if (req.files?.avatar && req.files.avatar[0]) {
+    try {
+      if (process.env.CLOUDINARY_API_KEY) {
+        const uploaded = await uploadToCloudinary(
+          req.files.avatar[0].buffer,
+          req.files.avatar[0].originalname,
+          'avatars'
+        );
+        avatarUrl = uploaded.secure_url;
+      } else {
+        const saved = await saveLocally(
+          req.files.avatar[0].buffer,
+          req.files.avatar[0].originalname,
+          'public/uploads/avatars'
+        );
+        avatarUrl = saved.url;
+      }
+    } catch (error) {
+      console.error("Avatar upload error during registration:", error);
+      // Continue without avatar - it's optional
+    }
+  }
+
+  // Handle optional cover image upload
+  let coverImageUrl = "";
+  if (req.files?.coverImage && req.files.coverImage[0]) {
+    try {
+      if (process.env.CLOUDINARY_API_KEY) {
+        const uploaded = await uploadToCloudinary(
+          req.files.coverImage[0].buffer,
+          req.files.coverImage[0].originalname,
+          'cover-images'
+        );
+        coverImageUrl = uploaded.secure_url;
+      } else {
+        const saved = await saveLocally(
+          req.files.coverImage[0].buffer,
+          req.files.coverImage[0].originalname,
+          'public/uploads/covers'
+        );
+        coverImageUrl = saved.url;
+      }
+    } catch (error) {
+      console.error("Cover image upload error during registration:", error);
+      // Continue without cover image - it's optional
+    }
+  }
+
   // Create user
   const user = await User.create({
     fullName,
@@ -66,8 +132,10 @@ export const registerUser = asyncHandler(async (req, res) => {
     password,
     username: username.toLowerCase(),
     accountType,
-    avatar: "",
-    coverImage: ""
+    avatar: avatarUrl,
+    coverImage: coverImageUrl,
+    bio: bio || "",
+    description: description || ""
   });
 
   const createdUser = await User.findById(user._id).select("-password -refreshToken");
@@ -100,7 +168,7 @@ export const loginUser = asyncHandler(async (req, res) => {
   // Find user by username OR email
   const user = await User.findOne({
     $or: [
-      { username: username?.toLowerCase() }, 
+      { username: username?.toLowerCase() },
       { email: email?.toLowerCase() }
     ]
   });
@@ -228,7 +296,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
 
 export const getCurrentUser = asyncHandler(async (req, res) => {
   console.log("Getting current user:", req.user?._id);
-  
+
   if (!req.user) {
     throw new ApiError(401, "User not authenticated");
   }
@@ -323,8 +391,8 @@ export const updateUserAvatar = asyncHandler(async (req, res) => {
       avatarUrl = uploaded.secure_url;
     } else {
       const saved = await saveLocally(
-        req.file.buffer, 
-        req.file.originalname, 
+        req.file.buffer,
+        req.file.originalname,
         'public/uploads/avatars'
       );
       avatarUrl = saved.url;
@@ -366,8 +434,8 @@ export const updateUserCoverImage = asyncHandler(async (req, res) => {
       coverImageUrl = uploaded.secure_url;
     } else {
       const saved = await saveLocally(
-        req.file.buffer, 
-        req.file.originalname, 
+        req.file.buffer,
+        req.file.originalname,
         'public/uploads/covers'
       );
       coverImageUrl = saved.url;
@@ -600,7 +668,7 @@ export const checkFollowStatus = asyncHandler(async (req, res) => {
   }
 
   const currentUser = await User.findById(currentUserId).select('following');
-  
+
   if (!currentUser) {
     throw new ApiError(404, "User not found");
   }
