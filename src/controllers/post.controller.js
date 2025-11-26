@@ -26,6 +26,12 @@ const addUserLikeState = (post, userId) => {
 
 export const uploadPost = async (req, res) => {
   try {
+    console.log('========== UPLOAD POST DEBUG ==========');
+    console.log('Headers:', req.headers['content-type']);
+    console.log('Body:', req.body);
+    console.log('Files:', req.files ? Object.keys(req.files) : 'NO FILES');
+    console.log('======================================');
+
     const { error, value } = uploadPostSchema.validate(req.body);
     if (error) {
       return res.status(400).json({ message: error.message });
@@ -35,7 +41,8 @@ export const uploadPost = async (req, res) => {
     const hasImages = req.files && req.files['images'];
     const hasShort = req.files && req.files['short'];
 
-    // Validate: only one type allowed
+    console.log('Detected types:', { hasVideo: !!hasVideo, hasImages: !!hasImages, hasShort: !!hasShort });
+
     const uploadTypes = [hasVideo, hasImages, hasShort].filter(Boolean).length;
     if (uploadTypes > 1) {
       return res.status(400).json({
@@ -45,7 +52,7 @@ export const uploadPost = async (req, res) => {
 
     if (!hasVideo && !hasImages && !hasShort) {
       return res.status(400).json({
-        message: 'Please upload either a video, images, or a short video'
+        message: 'Please upload either a video, images, or a short video.'
       });
     }
 
@@ -56,44 +63,38 @@ export const uploadPost = async (req, res) => {
       const shortFile = hasShort[0];
       const filename = shortFile.originalname;
 
+      let videoUrl, thumbnailUrl = null, duration = null;
+
       if (process.env.CLOUDINARY_API_KEY) {
         const uploaded = await uploadToCloudinary(shortFile.buffer, filename, 'posts/shorts');
-
-        // Validate short duration (max 60 seconds)
         if (uploaded.duration && uploaded.duration > 60) {
-          return res.status(400).json({
-            message: 'Shorts must be 60 seconds or less'
-          });
+          return res.status(400).json({ message: 'Shorts must be 60 seconds or less' });
         }
-
-        const post = new Post({
-          title: value.title,
-          description: value.description,
-          tags,
-          uploader: req.user._id,
-          postType: 'short',
-          videoUrl: uploaded.secure_url,
-          thumbnailUrl: uploaded.format && uploaded.resource_type !== 'image' ? null : uploaded.secure_url,
-          duration: uploaded.duration || null
-        });
-
-        await post.save();
-        return res.status(201).json(post);
+        videoUrl = uploaded.secure_url;
+        thumbnailUrl = uploaded.format && uploaded.resource_type !== 'image' ? null : uploaded.secure_url;
+        duration = uploaded.duration || null;
       } else {
         const saved = await saveLocally(shortFile.buffer, filename, 'public/uploads/posts/shorts');
-
-        const post = new Post({
-          title: value.title,
-          description: value.description,
-          tags,
-          uploader: req.user._id,
-          postType: 'short',
-          videoUrl: saved.url
-        });
-
-        await post.save();
-        return res.status(201).json(post);
+        videoUrl = saved.url;
       }
+
+      const post = new Post({
+        title: value.title,
+        description: value.description,
+        tags,
+        uploader: req.user._id,
+        postType: 'short',
+        videoUrl,
+        thumbnailUrl,
+        duration
+      });
+
+      await post.save();
+      
+      // 🔥 CRITICAL: Populate uploader before returning
+      await post.populate('uploader', 'username fullName avatar followersCount followingCount');
+      
+      return res.status(201).json(post);
     }
 
     // Handle VIDEO upload
@@ -101,37 +102,35 @@ export const uploadPost = async (req, res) => {
       const videoFile = hasVideo[0];
       const filename = videoFile.originalname;
 
+      let videoUrl, thumbnailUrl = null, duration = null;
+
       if (process.env.CLOUDINARY_API_KEY) {
         const uploaded = await uploadToCloudinary(videoFile.buffer, filename, 'posts/videos');
-
-        const post = new Post({
-          title: value.title,
-          description: value.description,
-          tags,
-          uploader: req.user._id,
-          postType: 'video',
-          videoUrl: uploaded.secure_url,
-          thumbnailUrl: uploaded.format && uploaded.resource_type !== 'image' ? null : uploaded.secure_url,
-          duration: uploaded.duration || null
-        });
-
-        await post.save();
-        return res.status(201).json(post);
+        videoUrl = uploaded.secure_url;
+        thumbnailUrl = uploaded.format && uploaded.resource_type !== 'image' ? null : uploaded.secure_url;
+        duration = uploaded.duration || null;
       } else {
         const saved = await saveLocally(videoFile.buffer, filename, 'public/uploads/posts/videos');
-
-        const post = new Post({
-          title: value.title,
-          description: value.description,
-          tags,
-          uploader: req.user._id,
-          postType: 'video',
-          videoUrl: saved.url
-        });
-
-        await post.save();
-        return res.status(201).json(post);
+        videoUrl = saved.url;
       }
+
+      const post = new Post({
+        title: value.title,
+        description: value.description,
+        tags,
+        uploader: req.user._id,
+        postType: 'video',
+        videoUrl,
+        thumbnailUrl,
+        duration
+      });
+
+      await post.save();
+      
+      // 🔥 CRITICAL: Populate uploader before returning
+      await post.populate('uploader', 'username fullName avatar followersCount followingCount');
+      
+      return res.status(201).json(post);
     }
 
     // Handle IMAGES upload
@@ -139,9 +138,7 @@ export const uploadPost = async (req, res) => {
       const imageFiles = hasImages;
 
       if (imageFiles.length > 10) {
-        return res.status(400).json({
-          message: 'Maximum 10 images allowed per post'
-        });
+        return res.status(400).json({ message: 'Maximum 10 images allowed per post' });
       }
 
       const uploadedImages = [];
@@ -151,16 +148,10 @@ export const uploadPost = async (req, res) => {
 
         if (process.env.CLOUDINARY_API_KEY) {
           const uploaded = await uploadToCloudinary(imageFile.buffer, filename, 'posts/images');
-          uploadedImages.push({
-            url: uploaded.secure_url,
-            caption: ''
-          });
+          uploadedImages.push({ url: uploaded.secure_url, caption: '' });
         } else {
           const saved = await saveLocally(imageFile.buffer, filename, 'public/uploads/posts/images');
-          uploadedImages.push({
-            url: saved.url,
-            caption: ''
-          });
+          uploadedImages.push({ url: saved.url, caption: '' });
         }
       }
 
@@ -174,6 +165,10 @@ export const uploadPost = async (req, res) => {
       });
 
       await post.save();
+      
+      // 🔥 CRITICAL: Populate uploader before returning
+      await post.populate('uploader', 'username fullName avatar followersCount followingCount');
+      
       return res.status(201).json(post);
     }
 
@@ -182,6 +177,7 @@ export const uploadPost = async (req, res) => {
     return res.status(500).json({ message: err.message || 'Upload failed' });
   }
 };
+
 
 export const getPost = async (req, res) => {
   try {
@@ -308,8 +304,8 @@ export const getFeed = async (req, res) => {
   try {
     const currentUserId = req.user._id;
     const page = parseInt(req.query.page) || 1;
-    const postType = req.query.type; // Optional filter
-    const shortsOnly = req.query.shortsOnly === 'true'; // NEW: Optional shorts filter
+    const postType = req.query.type;
+    const shortsOnly = req.query.shortsOnly === 'true';
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
@@ -321,16 +317,20 @@ export const getFeed = async (req, res) => {
 
     const followingIds = currentUser.following;
 
+    // If user is not following anyone, return empty feed
     if (followingIds.length === 0) {
       return res.json([]);
     }
 
+    // 🔥 CRITICAL FIX: Explicitly exclude current user's posts
     const query = {
-      uploader: { $in: followingIds },
+      uploader: { 
+        $in: followingIds,
+        $ne: currentUserId  // ✅ This ensures current user's posts are EXCLUDED
+      },
       isPublic: true
     };
 
-    // If shortsOnly is true, override postType and only fetch shorts
     if (shortsOnly) {
       query.postType = 'short';
     } else if (postType && ['video', 'images', 'short'].includes(postType)) {
@@ -344,6 +344,8 @@ export const getFeed = async (req, res) => {
       .populate('uploader', 'username fullName avatar followersCount followingCount');
 
     const postsWithLikeState = posts.map(post => addUserLikeState(post, currentUserId));
+
+    console.log(`Feed returned ${posts.length} posts for user ${currentUserId}, excluding their own posts`);
 
     res.json(postsWithLikeState);
   } catch (err) {
