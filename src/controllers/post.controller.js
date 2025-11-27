@@ -14,7 +14,7 @@ const uploadPostSchema = Joi.object({
 const addUserLikeState = (post, userId) => {
   const postObj = post.toObject ? post.toObject() : post;
   const userIdStr = userId?.toString();
-  
+
   return {
     ...postObj,
     isLiked: postObj.likes?.some(id => id.toString() === userIdStr) || false,
@@ -86,14 +86,15 @@ export const uploadPost = async (req, res) => {
         postType: 'short',
         videoUrl,
         thumbnailUrl,
-        duration
+        duration,
+        isPublic: true
       });
 
       await post.save();
-      
+
       // 🔥 CRITICAL: Populate uploader before returning
       await post.populate('uploader', 'username fullName avatar followersCount followingCount');
-      
+
       return res.status(201).json(post);
     }
 
@@ -122,14 +123,15 @@ export const uploadPost = async (req, res) => {
         postType: 'video',
         videoUrl,
         thumbnailUrl,
-        duration
+        duration,
+        isPublic: true
       });
 
       await post.save();
-      
+
       // 🔥 CRITICAL: Populate uploader before returning
       await post.populate('uploader', 'username fullName avatar followersCount followingCount');
-      
+
       return res.status(201).json(post);
     }
 
@@ -161,14 +163,15 @@ export const uploadPost = async (req, res) => {
         tags,
         uploader: req.user._id,
         postType: 'images',
-        images: uploadedImages
+        images: uploadedImages,
+         isPublic: true
       });
 
       await post.save();
-      
+
       // 🔥 CRITICAL: Populate uploader before returning
       await post.populate('uploader', 'username fullName avatar followersCount followingCount');
-      
+
       return res.status(201).json(post);
     }
 
@@ -279,7 +282,7 @@ export const listPosts = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const query = { isPublic: true };
-    
+
     // If shortsOnly is true, override postType and only fetch shorts
     if (shortsOnly) {
       query.postType = 'short';
@@ -324,7 +327,7 @@ export const getFeed = async (req, res) => {
 
     // 🔥 CRITICAL FIX: Explicitly exclude current user's posts
     const query = {
-      uploader: { 
+      uploader: {
         $in: followingIds,
         $ne: currentUserId  // ✅ This ensures current user's posts are EXCLUDED
       },
