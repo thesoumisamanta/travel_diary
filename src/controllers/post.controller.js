@@ -1,5 +1,6 @@
 import Post from '../models/post.models.js';
 import User from '../models/user.models.js';
+import Comment from '../models/comment.models.js';
 import { uploadToCloudinary, saveLocally } from '../services/uploadService.js';
 import mongoose from 'mongoose';
 import Joi from 'joi';
@@ -182,6 +183,7 @@ export const uploadPost = async (req, res) => {
 };
 
 
+// Around line 136 - getPost function
 export const getPost = async (req, res) => {
   try {
     const id = req.params.id;
@@ -199,6 +201,16 @@ export const getPost = async (req, res) => {
 
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
+    }
+
+    // ✅ ADD: Get actual comment count from database
+    const Comment = (await import('../models/comment.models.js')).default;
+    const commentCount = await Comment.countDocuments({ post: id, parent: null });
+    
+    // Update post's comment count if it's different
+    if (post.commentsCount !== commentCount) {
+      post.commentsCount = commentCount;
+      await post.save();
     }
 
     const postWithLikeState = addUserLikeState(post, userId);
@@ -276,14 +288,13 @@ export const listPosts = async (req, res) => {
   try {
     const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
-    const postType = req.query.type; // Optional filter: 'video', 'images', 'short'
-    const shortsOnly = req.query.shortsOnly === 'true'; // NEW: Optional shorts filter
+    const postType = req.query.type;
+    const shortsOnly = req.query.shortsOnly === 'true';
     const limit = parseInt(process.env.DEFAULT_PAGE_SIZE || 20);
     const skip = (page - 1) * limit;
 
     const query = { isPublic: true };
 
-    // If shortsOnly is true, override postType and only fetch shorts
     if (shortsOnly) {
       query.postType = 'short';
     } else if (postType && ['video', 'images', 'short'].includes(postType)) {
@@ -296,7 +307,31 @@ export const listPosts = async (req, res) => {
       .limit(limit)
       .populate('uploader', 'username fullName avatar followersCount followingCount');
 
-    const postsWithLikeState = posts.map(post => addUserLikeState(post, userId));
+    // ✅ REMOVE THIS LINE:
+    // const Comment = (await import('./comment.models.js')).default;
+    
+    // ✅ Calculate accurate comment count for each post (using static import)
+    const postsWithAccurateData = await Promise.all(
+      posts.map(async (post) => {
+        const actualCommentCount = await Comment.countDocuments({ 
+          post: post._id, 
+          parent: null 
+        });
+        
+        if (post.commentsCount !== actualCommentCount) {
+          console.log(`📝 Updating post ${post._id} comment count: ${post.commentsCount} -> ${actualCommentCount}`);
+          post.commentsCount = actualCommentCount;
+          await post.save();
+        }
+        
+        return post;
+      })
+    );
+
+    const postsWithLikeState = postsWithAccurateData.map(post => 
+      addUserLikeState(post, userId)
+    );
+
     res.json(postsWithLikeState);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -320,16 +355,14 @@ export const getFeed = async (req, res) => {
 
     const followingIds = currentUser.following;
 
-    // If user is not following anyone, return empty feed
     if (followingIds.length === 0) {
       return res.json([]);
     }
 
-    // 🔥 CRITICAL FIX: Explicitly exclude current user's posts
     const query = {
       uploader: {
         $in: followingIds,
-        $ne: currentUserId  // ✅ This ensures current user's posts are EXCLUDED
+        $ne: currentUserId
       },
       isPublic: true
     };
@@ -346,9 +379,34 @@ export const getFeed = async (req, res) => {
       .limit(limit)
       .populate('uploader', 'username fullName avatar followersCount followingCount');
 
-    const postsWithLikeState = posts.map(post => addUserLikeState(post, currentUserId));
+    // ✅ REMOVE THIS LINE:
+    // const Comment = (await import('./comment.models.js')).default;
+    
+    // ✅ Calculate accurate comment count for each post (using static import)
+    const postsWithAccurateData = await Promise.all(
+      posts.map(async (post) => {
+        // Get actual comment count from database (only top-level comments)
+        const actualCommentCount = await Comment.countDocuments({ 
+          post: post._id, 
+          parent: null 
+        });
+        
+        // Update if different
+        if (post.commentsCount !== actualCommentCount) {
+          console.log(`📝 Updating post ${post._id} comment count: ${post.commentsCount} -> ${actualCommentCount}`);
+          post.commentsCount = actualCommentCount;
+          await post.save();
+        }
+        
+        return post;
+      })
+    );
 
-    console.log(`Feed returned ${posts.length} posts for user ${currentUserId}, excluding their own posts`);
+    const postsWithLikeState = postsWithAccurateData.map(post => 
+      addUserLikeState(post, currentUserId)
+    );
+
+    console.log(`📤 Returning ${postsWithLikeState.length} posts for user ${currentUserId}`);
 
     res.json(postsWithLikeState);
   } catch (err) {

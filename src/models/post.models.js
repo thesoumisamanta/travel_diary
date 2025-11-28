@@ -1,30 +1,30 @@
 import mongoose from 'mongoose';
 
 const postSchema = new mongoose.Schema({
-  title: { 
-    type: String, 
-    required: true, 
-    index: 'text' 
+  title: {
+    type: String,
+    required: true,
+    index: 'text'
   },
-  description: { 
+  description: {
     type: String,
     default: '',
     index: 'text'
   },
-  uploader: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true, 
-    index: true 
+  uploader: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
   },
-  
+
   // Post Type: 'video', 'images', or 'short'
   postType: {
     type: String,
     enum: ['video', 'images', 'short'],
     required: true
   },
-  
+
   // Content identifier for frontend formatting
   // 'gallery' for multiple images, 'single_image' for one image,
   // 'long_video' for videos > 60s, 'short_video' for shorts <= 60s
@@ -33,64 +33,68 @@ const postSchema = new mongoose.Schema({
     enum: ['gallery', 'single_image', 'long_video', 'short_video'],
     default: null
   },
-  
+
   // For video/short posts (only 1 video)
-  videoUrl: { 
-    type: String 
+  videoUrl: {
+    type: String
   },
-  thumbnailUrl: { 
-    type: String 
+  thumbnailUrl: {
+    type: String
   },
-  duration: { 
+  duration: {
     type: Number // Duration in seconds
   },
-  
+
   // For image posts (up to 10 images)
   images: [{
     url: { type: String, required: true },
     caption: { type: String, default: '' }
   }],
-  
+
   // Common fields
-  views: { 
-    type: Number, 
-    default: 0 
+  views: {
+    type: Number,
+    default: 0
   },
-  likes: [{ 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User' 
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }],
-  dislikes: [{ 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User' 
+  dislikes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }],
+  commentsCount: {
+    type: Number,
+    default: 0
+  },
   tags: {
     type: [String],
     index: 'text'
   },
-  isPublic: { 
-    type: Boolean, 
-    default: true 
+  isPublic: {
+    type: Boolean,
+    default: true
   },
-  
+
   // Aspect ratio for proper display in frontend
   aspectRatio: {
     type: Number, // width / height
     default: null
   },
-  
-  createdAt: { 
-    type: Date, 
+
+  createdAt: {
+    type: Date,
     default: Date.now,
     index: -1
   }
 });
 
 // Compound text search index for better search performance
-postSchema.index({ 
-  title: 'text', 
-  description: 'text', 
-  tags: 'text' 
+postSchema.index({
+  title: 'text',
+  description: 'text',
+  tags: 'text'
 }, {
   weights: {
     title: 10,
@@ -106,7 +110,7 @@ postSchema.index({ tags: 1 });
 postSchema.index({ title: 1 });
 
 // Validation and auto-set contentFormat
-postSchema.pre('save', function(next) {
+postSchema.pre('save', function (next) {
   if (this.postType === 'video') {
     if (!this.videoUrl) {
       return next(new Error('Video URL is required for video posts'));
@@ -138,7 +142,7 @@ postSchema.pre('save', function(next) {
 });
 
 // Virtual for formatted response
-postSchema.virtual('formattedType').get(function() {
+postSchema.virtual('formattedType').get(function () {
   return {
     type: this.postType,
     format: this.contentFormat,
